@@ -11,6 +11,7 @@ from enum import Enum
 from typing import Any
 
 from fastapi import HTTPException
+from uni_agent.rlinsight_adapter import start_generation_span
 
 from uni_agent.gateway.session.codec import MessageCodec
 from uni_agent.gateway.session.types import InternalGenerationRequest, SessionHandle, Trajectory
@@ -181,6 +182,7 @@ class GatewaySession:
         response_length: int | None = None,
         sampling_params: dict[str, Any] | None = None,
         enable_last_assistant_rollback: bool = True,
+        metadata: dict[str, Any] | None = None,
     ):
         """Create an active session bound to a handle and model codec."""
         if prompt_length is not None and prompt_length <= 0:
@@ -197,6 +199,8 @@ class GatewaySession:
         )
         self._sampling_params = dict(sampling_params or {})
         self._enable_last_assistant_rollback = enable_last_assistant_rollback
+        self._metadata = dict(metadata or {})
+        self._trace_identity = dict(self._metadata.get("_trace_identity") or {})
         self.active_chains: list[ChainState] = []
         self.materialized_chains: list[MaterializedChain] = []
         self.reserved_chain_ids: set[int] = set()
@@ -229,6 +233,7 @@ class GatewaySession:
         # completion order. The framework currently scores session_trajectories[-1]
         # and broadcasts that reward, so concurrent siblings share one reward target.
         reserved_chain_id: int | None = None
+        generation_span = start_generation_span(self._trace_identity)
         try:
             async with self.request_lock:
                 if self.phase != SessionPhase.ACTIVE:
@@ -244,6 +249,10 @@ class GatewaySession:
                     if encoded.chain_id is not None:
                         self._close_length_exhausted_chain(encoded)
                     self._touch()
+                    generation_span.capacity_exhausted(
+                        prompt_tokens=len(encoded.context_ids),
+                        chain_id=encoded.chain_id,
+                    )
                     return GenerationOutcome(
                         assistant_msg=empty_msg,
                         finish_reason="length",
@@ -310,18 +319,30 @@ class GatewaySession:
                     tools=encoded.tools,
                     stop_reason=output.stop_reason,
                 )
-                self._commit_generation_to_chain(encoded, assistant_msg)
+                chain_id = self._commit_generation_to_chain(encoded, assistant_msg)
                 if reserved_chain_id is not None:
                     self.reserved_chain_ids.discard(reserved_chain_id)
                     reserved_chain_id = None
                 self._touch()
+                generation_span.success(
+                    prompt_tokens=len(encoded.context_ids),
+                    completion_tokens=len(response_ids),
+                    chain_id=chain_id,
+                    turn=self._order_seq,
+                    assistant_msg=assistant_msg,
+                    finish_reason=finish_reason,
+                )
                 return GenerationOutcome(
                     assistant_msg=assistant_msg,
                     finish_reason=finish_reason,
                     prompt_tokens=len(encoded.context_ids),
                     completion_tokens=len(response_ids),
                 )
+        except Exception as exc:
+            generation_span.failure(exc)
+            raise
         finally:
+            generation_span.report()
             if reserved_chain_id is not None:
                 await asyncio.shield(self._release_chain_reservation(reserved_chain_id))
 
@@ -671,7 +692,7 @@ class GatewaySession:
         self._rollback_count += 1
         self._rollback_dropped_trainable_tokens_total += encoded.rollback_dropped_trainable_tokens
 
-    def _commit_generation_to_chain(self, encoded: EncodedData, assistant_msg: dict[str, Any]) -> None:
+    def _commit_generation_to_chain(self, encoded: EncodedData, assistant_msg: dict[str, Any]) -> int:
         message_history = list(encoded.messages) + [assistant_msg]
         message_prefix_hashes = self._extend_message_prefix_hashes(
             encoded.incoming_message_prefix_hashes,
@@ -697,7 +718,7 @@ class GatewaySession:
                     updated_seq=order_seq,
                 )
             )
-            return
+            return chain_id
 
         chain_index, previous_chain = self._find_active_chain(encoded.chain_id)
         order_seq = self._next_order_seq()
@@ -712,6 +733,7 @@ class GatewaySession:
             last_assistant_start=encoded.last_assistant_start,
             updated_seq=order_seq,
         )
+        return previous_chain.chain_id
 
     def _close_length_exhausted_chain(self, encoded: EncodedData) -> None:
         if encoded.chain_id is None:
@@ -802,6 +824,7 @@ class GatewaySession:
             response_logprobs=response_logprobs,
             reward_info={},
             num_turns=self._count_chat_turns(chain.message_history),
+            chain_id=chain.chain_id,
             routed_experts=chain.buffer.routed_experts,
             multi_modal_data=self._build_multi_modal_trajectory_data(
                 chain.image_data,

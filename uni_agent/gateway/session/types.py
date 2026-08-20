@@ -71,6 +71,7 @@ class Trajectory:
     reward_info: dict[str, Any] = field(default_factory=dict)
     reward_score: float | None = None
     num_turns: int = 0
+    chain_id: int | None = None
     routed_experts: torch.Tensor | np.ndarray | None = None
     multi_modal_data: dict[str, Any] | None = None
     extra_fields: dict[str, Any] = field(default_factory=dict)

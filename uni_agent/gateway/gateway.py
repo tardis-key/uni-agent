@@ -255,6 +255,7 @@ class _GatewayActor:
             response_length=self._response_length,
             sampling_params=sampling_params,
             enable_last_assistant_rollback=self._enable_last_assistant_rollback,
+            metadata=metadata,
         )
         return handle
 

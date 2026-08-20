@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from uni_agent.tasks import TaskConfigResolver, TaskResult, get_task
+from uni_agent.rlinsight_adapter import task_span
 
 if TYPE_CHECKING:
     from uni_agent.gateway.session import SessionHandle
@@ -55,24 +56,25 @@ async def run_task(
     task_name = task.get("name")
     logger.info("run_task start: task=%s sample_index=%s", task_name, sample_index)
 
-    result = await get_task(task).run()
+    prompt = task.get("prompt", [])
+    with task_span(tools_kwargs, task_name=task_name, prompt=prompt) as span:
+        result = await get_task(task).run()
+        reward_posted = False
+        if report_reward and session.reward_info_url:
+            reward_posted = await _post_reward_info(session.reward_info_url, result)
+        span.record_result(result, reward_posted=reward_posted)
+        logger.info(
+            "run_task done: task=%s reward=%s acc=%s finished=%s reward_posted=%s",
+            task_name,
+            result.reward,
+            result.accuracy,
+            result.finished,
+            reward_posted,
+        )
+        return result
 
-    reward_posted = False
-    if report_reward and session.reward_info_url:
-        await _post_reward_info(session.reward_info_url, result)
-        reward_posted = True
-    logger.info(
-        "run_task done: task=%s reward=%s acc=%s finished=%s reward_posted=%s",
-        task_name,
-        result.reward,
-        result.accuracy,
-        result.finished,
-        reward_posted,
-    )
-    return result
 
-
-async def _post_reward_info(reward_info_url: str, result: TaskResult) -> None:
+async def _post_reward_info(reward_info_url: str, result: TaskResult) -> bool:
     """Best-effort POST of task reward, accuracy, and Agent completion."""
     import aiohttp
 
@@ -85,6 +87,8 @@ async def _post_reward_info(reward_info_url: str, result: TaskResult) -> None:
         logger.debug("posted reward_info to %s: %s", reward_info_url, reward_info)
     except Exception as exc:  # noqa: BLE001 - reward-info is best-effort telemetry
         logger.warning("failed to post reward_info to %s: %s: %s", reward_info_url, type(exc).__name__, exc)
+        return False
+    return True
 
 
 def _reward_info_from_result(result: TaskResult) -> dict[str, Any]:
