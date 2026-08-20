@@ -26,6 +26,7 @@ from verl.tools.tool_registry import initialize_tools_from_config
 from verl.utils import tensordict_utils as tu
 from verl.utils.import_utils import load_class_from_fqn
 from verl.utils.model import compute_position_id_with_mask
+from verl.utils.tracking import RLInsightLogger
 from verl.utils.transferqueue_utils import tq
 
 from .base import AgentFramework
@@ -645,6 +646,15 @@ class OpenAICompatibleAgentFramework(AgentFramework):
     ) -> tuple[list[Trajectory], dict[str, object]]:
         """Run one gateway session lifecycle and return finalized trajectories."""
         session_id = f"session-sample-{sample_index}-rollout-{session_index}-{uuid4().hex}"
+        uid = str(sample_fields.get("uid", ""))
+        session_trace = RLInsightLogger.agent_loop_session(
+            sample=sample_index,
+            session=session_index,
+            uid=uid,
+            global_steps=global_steps,
+            session_id=session_id,
+        )
+        trace_identity = session_trace.identity
         if self._log_dir:
             log_root = Path(self._log_dir)
             run_dir = (log_root if global_steps is None else log_root / f"step_{int(global_steps)}") / session_id
@@ -659,9 +669,12 @@ class OpenAICompatibleAgentFramework(AgentFramework):
 
         raw_prompt = sample_fields["raw_prompt"]
         tools_kwargs = sample_fields.get("tools_kwargs")
+        tools_kwargs = dict(tools_kwargs or {})
+        tools_kwargs["_trace_identity"] = trace_identity
         async with _log_scope(parent_log):
             session = await self.gateway_manager.create_session(
                 session_id,
+                metadata={"_trace_identity": trace_identity},
                 sampling_params=dict(sampling_params),
             )
             logger.info(
@@ -703,9 +716,19 @@ class OpenAICompatibleAgentFramework(AgentFramework):
             except Exception:
                 logger.exception("session %s failed (runner=%s); aborting session", session_id, runner_name)
                 await self.gateway_manager.abort_session(session_id)
+                session_trace.finish(
+                    runner_name=runner_name,
+                    status="failure",
+                    trajectories=[],
+                )
                 raise
 
             if not session_trajectories:
+                session_trace.finish(
+                    runner_name=runner_name,
+                    status="empty",
+                    trajectories=[],
+                )
                 return session_trajectories, sample_fields
 
             # Prefer the reward the runner posted to the session (report_reward=True);
@@ -733,6 +756,13 @@ class OpenAICompatibleAgentFramework(AgentFramework):
             self._log_trajectory_summary(session_id, result_trajectories)
             if run_dir is not None:
                 await asyncio.to_thread(self._dump_trajectories, run_dir, session_id, result_trajectories)
+            session_trace.finish(
+                runner_name=runner_name,
+                status="success",
+                trajectories=result_trajectories,
+                reward_source=reward_source,
+                finished=result_trajectories[0].reward_info.get("finished") if result_trajectories else None,
+            )
             return result_trajectories, sample_fields
 
     def _log_trajectory_summary(self, session_id: str, trajectories: list[Trajectory]) -> None:

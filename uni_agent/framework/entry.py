@@ -20,6 +20,7 @@ from omegaconf import OmegaConf
 from uni_agent.framework.base import AgentFramework
 from uni_agent.gateway.config import GatewayActorConfig
 from uni_agent.gateway.manager import GatewayManager
+from uni_agent.rlinsight_adapter import init_rollout_trace_config
 from verl.utils.config import omega_conf_to_dataclass
 from verl.utils.import_utils import load_class_from_fqn
 from verl.utils.transferqueue_utils import tq
@@ -86,6 +87,7 @@ class AgentFrameworkWorker:
 
     def __init__(self, *, config, gateway_manager, reward_loop_worker_handles=None) -> None:
         tq.init()
+        init_rollout_trace_config(config)
         self.framework = build_agent_framework(
             config=config,
             gateway_manager=gateway_manager,

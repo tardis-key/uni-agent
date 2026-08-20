@@ -375,7 +375,11 @@ async def test_agent_runners_registry_materializes_runners_and_selects_by_agent_
     assert all(call["base_url"].endswith("/v1") for call in calls)
     assert all(call["reward_info_url"].endswith("/reward_info") for call in calls)
     assert [call["sample_index"] for call in calls] == [0, 1]
-    assert [call["kwargs"]["tools_kwargs"] for call in calls] == [{"tool": 0}, {"tool": 1}]
+    runner_tools_kwargs = [
+        {key: value for key, value in call["kwargs"]["tools_kwargs"].items() if key != "_trace_identity"}
+        for call in calls
+    ]
+    assert runner_tools_kwargs == [{"tool": 0}, {"tool": 1}]
     assert all("gateway_manager" not in call["kwargs"] for call in calls)
 
 
@@ -534,7 +538,7 @@ async def test_framework_binds_sampling_defaults_to_gateway_sessions(
         )
     )
 
-    assert runtime.created_session_kwargs == [{"sampling_params": expected_sampling_params}]
+    assert [kwargs["sampling_params"] for kwargs in runtime.created_session_kwargs] == [expected_sampling_params]
 
 
 @pytest.mark.asyncio
