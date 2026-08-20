@@ -6,6 +6,7 @@ from typing import Any
 
 import datasets
 import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from uni_agent.tasks.hotpotqa.preprocess import (
@@ -71,6 +72,21 @@ class HotpotQAMemAgentDataset(RLHFDataset):
                 raise ValueError(f"HotpotQA parquet is missing required columns {missing}: {parquet_file}")
 
             table = pq.read_table(parquet_file, columns=list(_REQUIRED_COLUMNS), memory_map=True)
+            # pyarrow's `string` uses 32-bit offsets and overflows when
+            # concatenating many long contexts; cast to `large_string`.
+            if any(pa.types.is_string(f.type) for f in table.schema):
+                table = table.cast(
+                    pa.schema(
+                        [
+                            pa.field(
+                                f.name,
+                                pa.large_string() if pa.types.is_string(f.type) else f.type,
+                                f.nullable,
+                            )
+                            for f in table.schema
+                        ]
+                    )
+                )
             dataframes.append(datasets.Dataset(table))
 
         self.dataframe = datasets.concatenate_datasets(dataframes)
