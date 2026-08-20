@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
+from uni_agent.rlinsight_adapter import trace_sandbox_lifecycle
 
 from .utils import (
     extract_dir_from_file,
@@ -203,10 +204,17 @@ class Sandbox(abc.ABC):
     async def _run_start(self) -> None:
         """Run :meth:`start`, bounding it by the ``SANDBOX_STARTUP_TIMEOUT`` env cap (``<=0`` disables)."""
         timeout = _env_number("SANDBOX_STARTUP_TIMEOUT", _DEFAULT_STARTUP_TIMEOUT)
+        operation = self.start()
+        if timeout > 0:
+            operation = asyncio.wait_for(operation, timeout=timeout)
         try:
-            await asyncio.wait_for(self.start(), timeout=timeout if timeout > 0 else None)
+            await trace_sandbox_lifecycle(operation, sandbox=self, lifecycle="start")
         except asyncio.TimeoutError as exc:
             raise TimeoutError(f"sandbox start() exceeded SANDBOX_STARTUP_TIMEOUT={timeout:g}s") from exc
+
+    async def _stop_traced(self) -> None:
+        """Stop the sandbox and report its lifecycle span."""
+        await trace_sandbox_lifecycle(self.stop(), sandbox=self, lifecycle="stop")
 
     async def __aenter__(self, retry: int = 3) -> Sandbox:
         """Create the sandbox (retrying transient ``start()`` failures) and return it ready.
@@ -236,7 +244,7 @@ class Sandbox(abc.ABC):
         raise last_exc
 
     async def __aexit__(self, *exc) -> None:
-        await self.stop()
+        await self._stop_traced()
 
     @asynccontextmanager
     async def entered(self, **start_kwargs: Any) -> AsyncIterator[Sandbox]:
@@ -244,7 +252,7 @@ class Sandbox(abc.ABC):
         try:
             yield self
         finally:
-            await self.stop()
+            await self._stop_traced()
 
     # ----- data plane: providers implement the _exec primitive -----
     @abc.abstractmethod
