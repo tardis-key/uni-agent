@@ -121,50 +121,30 @@ Awaitable wrapper for a sandbox start or stop coroutine. It reports
 
 ## Verification
 
-The integration was verified with the following code versions:
+The integration was verified on one eight-NPU node with the following code versions:
 
 | Repository | Fork branch | Commit |
 |---|---|---|
 | RL-Insight | `tardis-key/rl-insight:main` | `c9e757a` |
-| Uni-Agent | `tardis-key/uni-agent:rlinsight` | `1485d18` |
+| Uni-Agent | `tardis-key/uni-agent:rlinsight` | `3641634` |
 | verl | `tardis-key/verl:rlinsight` | `b52bee64` |
 
-No tracked MemAgent file is modified. Keep `examples/mem_agent/train_mem_agent.sh`
-and `examples/mem_agent/README.md` exactly as they are in the corresponding
-upstream revision. The only local setup is:
+No tracked file in any of the three repositories is modified. In particular, `examples/mem_agent/train_mem_agent.sh` and `examples/mem_agent/README.md` remain exactly as they are upstream.
 
-1. Check out the three repositories as siblings.
-2. If you use the upstream MemAgent launcher, create an untracked `verl` symlink
-   inside the Uni-Agent checkout:
+The upstream MemAgent shell launcher is not used on NPU because it schedules Ray GPU resources. Use the direct Ray job helper below instead; verl detects Ascend NPU and schedules the workers through its NPU resource path.
 
-   ```bash
-   ln -s ../verl verl
-   ```
-
-3. Use the original Qwen3-4B model and the original HotpotQA parquet files.
-4. Do not set `trainer.device`; verl auto-detects Ascend NPU.
-
-A one-step smoke run can then be launched with:
+Use the original Qwen3-4B model and the original HotpotQA parquet files. If Ray is not already running, start it from a stable directory:
 
 ```bash
-REPO_ROOT=/path/to/uni-agent \
-MODEL_PATH=/path/to/Qwen3-4B \
-TRAIN_FILE=/path/to/hotpotqa_train_32k.parquet \
-VAL_FILE=/path/to/hotpotqa_dev.parquet \
-PYTHON_BIN=/path/to/python3 \
-RAY_BIN=/path/to/ray \
-GPU_IDS=0,1,2,3,4,5,6,7 \
-PROJECT_NAME=mem_agent_smoke \
-EXPERIMENT_NAME=mem_agent_smoke_$(date +%Y%m%d_%H%M%S) \
-RAY_OVERRIDE_JOB_RUNTIME_ENV=1 \
-bash examples/mem_agent/train_mem_agent.sh \
-  trainer.total_epochs=1 \
-  trainer.total_training_steps=1 \
-  data.train_max_samples=4 \
-  data.val_max_samples=4 \
-  trainer.test_freq=100 \
-  trainer.save_freq=100
+cd /home/huxiaobo
+ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+ray start --head --resources='{"NPU":8}' --port=6293
 ```
 
-After the job succeeds, open Grafana's Agent Loop Trajectory dashboard and select
-the generated experiment and numeric step.
+Submit the one-step smoke run with:
+
+```bash
+bash docs/source/_static/run_mem_agent_npu.sh
+```
+
+After the job succeeds, open Grafana's Agent Loop Trajectory dashboard and select the generated experiment and numeric step. The verified run produced four successful sessions, thirty-six outputs, and one completed training step.
