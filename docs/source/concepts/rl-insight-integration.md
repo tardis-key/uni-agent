@@ -121,13 +121,50 @@ Awaitable wrapper for a sandbox start or stop coroutine. It reports
 
 ## Verification
 
-Run the focused tests with the sibling verl checkout on `PYTHONPATH`:
+The integration was verified with the following code versions:
+
+| Repository | Fork branch | Commit |
+|---|---|---|
+| RL-Insight | `tardis-key/rl-insight:main` | `c9e757a` |
+| Uni-Agent | `tardis-key/uni-agent:rlinsight` | `1485d18` |
+| verl | `tardis-key/verl:rlinsight` | `b52bee64` |
+
+No tracked MemAgent file is modified. Keep `examples/mem_agent/train_mem_agent.sh`
+and `examples/mem_agent/README.md` exactly as they are in the corresponding
+upstream revision. The only local setup is:
+
+1. Check out the three repositories as siblings.
+2. If you use the upstream MemAgent launcher, create an untracked `verl` symlink
+   inside the Uni-Agent checkout:
+
+   ```bash
+   ln -s ../verl verl
+   ```
+
+3. Use the original Qwen3-4B model and the original HotpotQA parquet files.
+4. Do not set `trainer.device`; verl auto-detects Ascend NPU.
+
+A one-step smoke run can then be launched with:
 
 ```bash
-PYTHONPATH=/path/to/verl python -m pytest \
-  tests/uni_agent/test_rlinsight_adapter.py \
-  tests/uni_agent/framework/test_generate_sequences_on_cpu.py -q
+REPO_ROOT=/path/to/uni-agent \
+MODEL_PATH=/path/to/Qwen3-4B \
+TRAIN_FILE=/path/to/hotpotqa_train_32k.parquet \
+VAL_FILE=/path/to/hotpotqa_dev.parquet \
+PYTHON_BIN=/path/to/python3 \
+RAY_BIN=/path/to/ray \
+GPU_IDS=0,1,2,3,4,5,6,7 \
+PROJECT_NAME=mem_agent_smoke \
+EXPERIMENT_NAME=mem_agent_smoke_$(date +%Y%m%d_%H%M%S) \
+RAY_OVERRIDE_JOB_RUNTIME_ENV=1 \
+bash examples/mem_agent/train_mem_agent.sh \
+  trainer.total_epochs=1 \
+  trainer.total_training_steps=1 \
+  data.train_max_samples=4 \
+  data.val_max_samples=4 \
+  trainer.test_freq=100 \
+  trainer.save_freq=100
 ```
 
-For end-to-end verification, run a one-step MemAgent training job, open Grafana's
-Agent Loop Trajectory dashboard, and select the experiment and numeric step.
+After the job succeeds, open Grafana's Agent Loop Trajectory dashboard and select
+the generated experiment and numeric step.
