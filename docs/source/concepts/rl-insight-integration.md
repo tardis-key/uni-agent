@@ -167,3 +167,8 @@ data.val_max_samples=4 \
 trainer.test_freq=100 \
 trainer.save_freq=100
 ```
+
+## Related documentation
+
+- [Use RL-Insight to monitor verl training](https://github.com/verl-project/verl/blob/main/docs/advance/rl_insight.md)
+- [Agent Loop protocol](https://github.com/verl-project/rl-insight/blob/main/docs/monitor/agent_loop_protocol.md)
