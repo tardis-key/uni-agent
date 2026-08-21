@@ -123,46 +123,56 @@ Awaitable wrapper for a sandbox start or stop coroutine. It reports
 
 The integration was verified with:
 
-| Repository | PR |
-|---|---|
-| RL-Insight | [#148](https://github.com/verl-project/rl-insight/pull/148) |
-| Uni-Agent | [#124](https://github.com/verl-project/uni-agent/pull/124) |
-| verl | [#7448](https://github.com/verl-project/verl/pull/7448) |
+- RL-Insight: [#148](https://github.com/verl-project/rl-insight/pull/148)
+- Uni-Agent: [#124](https://github.com/verl-project/uni-agent/pull/124)
+- verl: [#7448](https://github.com/verl-project/verl/pull/7448)
 
-For `examples/mem_agent/train_mem_agent.sh`, make these local changes:
+Apply this NPU-specific diff to `examples/mem_agent/train_mem_agent.sh`:
 
-| Change | Reason |
-|---|---|
-| Use sibling `verl` checkout in `PYTHONPATH` | Needed for branch consistency. |
-| Allow `TRAIN_FILE` override | Avoid copying the parquet. |
-| Start Ray with `NPU` resources and `ASCEND_RT_VISIBLE_DEVICES` | Needed on Ascend. |
-| Set `VERL_RL_INSIGHT_ENABLE=1`, `RL_INSIGHT_SERVER_URL`, and `RAY_OVERRIDE_JOB_RUNTIME_ENV=1` | Needed for RL-Insight. |
-| Set `actor_rollout_ref.rollout.disable_log_stats=False` | Needed for metrics. |
-| Add `rl_insight` to `trainer.logger` | Needed for logging. |
+```diff
+diff --git a/examples/mem_agent/train_mem_agent.sh b/examples/mem_agent/train_mem_agent.sh
+@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
++VERL_ROOT="${VERL_ROOT:-$(cd "${REPO_ROOT}/.." && pwd)/verl}"
+ cd "${REPO_ROOT}"
+@@ -74,7 +75,7 @@ NUM_AGENT_WORKERS="${NUM_AGENT_WORKERS:-8}"
+ export HYDRA_FULL_ERROR=1
+-export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/verl:${PYTHONPATH:-}"
++export PYTHONPATH="${REPO_ROOT}:${VERL_ROOT}:${PYTHONPATH:-}"
+@@ -78,7 +79,7 @@
+ if ! "${RAY_BIN}" status >/dev/null 2>&1; then
+-    echo "Starting a local Ray cluster on physical GPUs ${GPU_IDS}..."
+-    CUDA_VISIBLE_DEVICES="${GPU_IDS}" "${RAY_BIN}" start --head --num-gpus="${GPU_COUNT}"
++    echo "Starting a local Ray cluster on physical NPUs ${GPU_IDS}..."
++    ASCEND_RT_VISIBLE_DEVICES="${GPU_IDS}" "${RAY_BIN}" start --head --resources="{\"NPU\": ${GPU_COUNT}}"
+ fi
+@@ -91,7 +92,7 @@
+-@ray.remote(num_gpus=int(os.environ["GPU_COUNT"]))
++@ray.remote(resources={"NPU": int(os.environ["GPU_COUNT"])})
+ def visible_gpu_ids() -> str:
+-    return os.environ.get("CUDA_VISIBLE_DEVICES", "")
++    return os.environ.get("ASCEND_RT_VISIBLE_DEVICES", "")
+@@ -114,7 +115,7 @@
+ "${RAY_BIN}" job submit --no-wait \
+     --working-dir="${REPO_ROOT}" \
+-    --runtime-env-json="{\"env_vars\": {\"NCCL_DEBUG\": \"INFO\", \"NCCL_P2P_DISABLE\": \"1\", \"NCCL_IB_DISABLE\": \"1\", \"RAY_DEDUP_LOGS\": \"0\"}}" \
++    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${REPO_ROOT}:${VERL_ROOT}\", \"VERL_RL_INSIGHT_ENABLE\": \"1\", \"RL_INSIGHT_SERVER_URL\": \"http://127.0.0.1:18080\", \"NCCL_DEBUG\": \"INFO\", \"NCCL_P2P_DISABLE\": \"1\", \"NCCL_IB_DISABLE\": \"1\", \"RAY_DEDUP_LOGS\": \"0\", \"RAY_OVERRIDE_JOB_RUNTIME_ENV\": \"1\"}}" \
+     -- "${PYTHON_BIN}" -m verl.trainer.main_ppo \
+```
 
 Run:
 
 ```bash
-cd /home/huxiaobo
-ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-ray start --head --resources='{"NPU":8}' --port=6293
+bash examples/mem_agent/train_mem_agent.sh
 ```
 
+For a short one-step smoke test, append:
+
 ```bash
-REPO_ROOT=/home/huxiaobo/uni-agent \
-MODEL_PATH=/home/huxiaobo/data/model/Qwen3-4B \
-TRAIN_FILE=/home/huxiaobo/data/hotpotqa/hotpotqa_train_32k.parquet \
-VAL_FILE=/home/huxiaobo/data/hotpotqa/hotpotqa_dev.parquet \
-PYTHON_BIN=/usr/local/python3.11.15/bin/python3 \
-RAY_BIN=/usr/local/python3.11.15/bin/ray \
-GPU_IDS=0,1,2,3,4,5,6,7 \
-PROJECT_NAME=mem_agent_smoke \
-EXPERIMENT_NAME=mem_agent_smoke_$(date +%Y%m%d_%H%M%S) \
-bash examples/mem_agent/train_mem_agent.sh \
-  trainer.total_epochs=1 \
-  trainer.total_training_steps=1 \
-  data.train_max_samples=4 \
-  data.val_max_samples=4 \
-  trainer.test_freq=100 \
-  trainer.save_freq=100
+trainer.total_epochs=1 \
+trainer.total_training_steps=1 \
+data.train_max_samples=4 \
+data.val_max_samples=4 \
+trainer.test_freq=100 \
+trainer.save_freq=100
 ```
