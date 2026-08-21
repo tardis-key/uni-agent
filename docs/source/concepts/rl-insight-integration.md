@@ -123,11 +123,11 @@ Awaitable wrapper for a sandbox start or stop coroutine. It reports
 
 The integration was verified with:
 
-| Repository | Branch | Commit |
-|---|---|---|
-| RL-Insight | `tardis-key/rl-insight:main` | `7cc8717` |
-| Uni-Agent | `tardis-key/uni-agent:rlinsight` | `13948bb` |
-| verl | `tardis-key/verl:rlinsight` | `3d3af35b` |
+| Repository | PR |
+|---|---|
+| RL-Insight | [#148](https://github.com/verl-project/rl-insight/pull/148) |
+| Uni-Agent | [#124](https://github.com/verl-project/uni-agent/pull/124) |
+| verl | [#7448](https://github.com/verl-project/verl/pull/7448) |
 
 For `examples/mem_agent/train_mem_agent.sh`, make these local changes:
 
