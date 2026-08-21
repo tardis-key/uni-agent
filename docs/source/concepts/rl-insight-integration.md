@@ -110,15 +110,6 @@ Gateway code must call `report()` in a `finally` block.
 Awaitable wrapper for a sandbox start or stop coroutine. It reports
 `agent_sandbox` after the operation succeeds or raises.
 
-## Instrumentation rules
-
-1. Do not modify `session.identity` after creation.
-2. Keep `global_steps` numeric; do not stringify it.
-3. Map one-based `chain_id` to zero-based `traj` through the adapter.
-4. Report failed and capacity-exhausted operations, not only successes.
-5. Never emit `agent_loop_*` metrics directly; `session.finish()` owns them.
-6. Keep tracing best-effort: adapter failures must not break rollout.
-
 ## Verification
 
 The integration was verified with:
