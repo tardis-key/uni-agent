@@ -131,7 +131,7 @@ The integration was verified on one eight-NPU node with the following code versi
 
 No tracked file in any of the three repositories is modified. In particular, `examples/mem_agent/train_mem_agent.sh` and `examples/mem_agent/README.md` remain exactly as they are upstream.
 
-The upstream MemAgent shell launcher is not used on NPU because it schedules Ray GPU resources. Use the direct Ray job helper below instead; verl detects Ascend NPU and schedules the workers through its NPU resource path.
+The upstream MemAgent shell launcher is not used on NPU because it schedules Ray GPU resources. Use the direct Ray job helper below instead; verl detects Ascend NPU and schedules the workers through its NPU resource path. The helper also puts the checked-out RL-Insight, Uni-Agent, and verl repositories on `PYTHONPATH`.
 
 Use the original Qwen3-4B model and the original HotpotQA parquet files. If Ray is not already running, start it from a stable directory:
 

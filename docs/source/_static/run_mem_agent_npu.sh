@@ -93,7 +93,7 @@ entrypoint = r'''
 runtime_env = {
     "working_dir": "/home/huxiaobo/uni-agent",
     "env_vars": {
-        "PYTHONPATH": "/home/huxiaobo/uni-agent:/home/huxiaobo/verl",
+        "PYTHONPATH": "/home/huxiaobo/rl-insight:/home/huxiaobo/uni-agent:/home/huxiaobo/verl",
         "VERL_RL_INSIGHT_ENABLE": "1",
         "RL_INSIGHT_SERVER_URL": "http://127.0.0.1:18080",
         "NCCL_DEBUG": "INFO",
