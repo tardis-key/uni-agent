@@ -7,6 +7,15 @@ import pytest
 from uni_agent import rlinsight_adapter
 
 
+@pytest.fixture(autouse=True)
+def _reset_rlinsight_adapter_state():
+    rlinsight_adapter._warned_compatibility_features.clear()
+    rlinsight_adapter.RolloutTraceConfig.reset()
+    yield
+    rlinsight_adapter._warned_compatibility_features.clear()
+    rlinsight_adapter.RolloutTraceConfig.reset()
+
+
 def _capture_trace_span(monkeypatch: pytest.MonkeyPatch):
     captured: list[dict] = []
 
@@ -113,3 +122,26 @@ async def test_trace_sandbox_lifecycle_reports_success(monkeypatch: pytest.Monke
     assert attributes["runtime_id"] == "box"
     assert attributes["lifecycle"] == "stop"
     assert attributes["status"] == "success"
+
+
+def test_old_verl_missing_optional_apis_degrades_to_warnings(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    class OldVerlLogger:
+        pass
+
+    monkeypatch.setattr(rlinsight_adapter, "RLInsightLogger", OldVerlLogger)
+    monkeypatch.setattr(rlinsight_adapter, "agent_loop_lane_id", None)
+    rlinsight_adapter.RolloutTraceConfig.init(
+        project_name="project",
+        experiment_name="experiment",
+        backend=None,
+    )
+
+    with caplog.at_level("WARNING", logger="uni_agent.rlinsight_adapter"):
+        rlinsight_adapter._report_span("agent_task", start_time_ns=1, attributes={})
+        session = rlinsight_adapter.agent_loop_session(sample=7, session=1, global_steps=2)
+
+    assert "does not provide RLInsightLogger.trace_span" in caplog.text
+    assert "does not provide RLInsightLogger.agent_loop_session" in caplog.text
+    assert session.identity["project"] == "project"
+    assert session.identity["state_lane_id"] == "experiment=experiment/sample=7/session=1/traj=0"
+    session.finish(status="success", trajectories=[])
