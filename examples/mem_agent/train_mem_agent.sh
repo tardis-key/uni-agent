@@ -5,10 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
-VERL_ROOT="${VERL_ROOT:-$(cd "${REPO_ROOT}/.." && pwd)/verl}"
 cd "${REPO_ROOT}"
 : "${MODEL_PATH:=Qwen3-4B}"
-: "${TRAIN_FILE:=./hotpotqa/hotpotqa_train_32k.parquet}"
+TRAIN_FILE="./hotpotqa/hotpotqa_train_32k.parquet"
 : "${VAL_FILE:=./hotpotqa/hotpotqa_dev.parquet}"
 : "${CONDA_ENV_DIR:=/root/.miniconda3/envs/xxx}"
 : "${PYTHON_BIN:=${CONDA_ENV_DIR}/bin/python3}"
@@ -75,11 +74,11 @@ CONCURRENCY="${CONCURRENCY:-32}"
 NUM_AGENT_WORKERS="${NUM_AGENT_WORKERS:-8}"
 
 export HYDRA_FULL_ERROR=1
-export PYTHONPATH="${REPO_ROOT}:${VERL_ROOT}:${PYTHONPATH:-}"
+export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/verl:${PYTHONPATH:-}"
 
 if ! "${RAY_BIN}" status >/dev/null 2>&1; then
-    echo "Starting a local Ray cluster on physical NPUs ${GPU_IDS}..."
-    ASCEND_RT_VISIBLE_DEVICES="${GPU_IDS}" "${RAY_BIN}" start --head --resources="{\"NPU\": ${GPU_COUNT}}"
+    echo "Starting a local Ray cluster on physical GPUs ${GPU_IDS}..."
+    CUDA_VISIBLE_DEVICES="${GPU_IDS}" "${RAY_BIN}" start --head --num-gpus="${GPU_COUNT}"
 fi
 
 GPU_IDS="${GPU_IDS}" GPU_COUNT="${GPU_COUNT}" RAY_PREFLIGHT_TIMEOUT="${RAY_PREFLIGHT_TIMEOUT}" \
@@ -92,9 +91,9 @@ expected = set(os.environ["GPU_IDS"].split(","))
 ray.init(address="auto", logging_level="ERROR")
 
 
-@ray.remote(resources={"NPU": int(os.environ["GPU_COUNT"])})
+@ray.remote(num_gpus=int(os.environ["GPU_COUNT"]))
 def visible_gpu_ids() -> str:
-    return os.environ.get("ASCEND_RT_VISIBLE_DEVICES", "")
+    return os.environ.get("CUDA_VISIBLE_DEVICES", "")
 
 
 gpu_probe = visible_gpu_ids.remote()
@@ -115,7 +114,7 @@ PY
 
 "${RAY_BIN}" job submit --no-wait \
     --working-dir="${REPO_ROOT}" \
-    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${REPO_ROOT}:${VERL_ROOT}\", \"VERL_RL_INSIGHT_ENABLE\": \"1\", \"RL_INSIGHT_SERVER_URL\": \"http://127.0.0.1:18080\", \"NCCL_DEBUG\": \"INFO\", \"NCCL_P2P_DISABLE\": \"1\", \"NCCL_IB_DISABLE\": \"1\", \"RAY_DEDUP_LOGS\": \"0\", \"RAY_OVERRIDE_JOB_RUNTIME_ENV\": \"1\"}}" \
+    --runtime-env-json="{\"env_vars\": {\"NCCL_DEBUG\": \"INFO\", \"NCCL_P2P_DISABLE\": \"1\", \"NCCL_IB_DISABLE\": \"1\", \"RAY_DEDUP_LOGS\": \"0\"}}" \
     -- "${PYTHON_BIN}" -m verl.trainer.main_ppo \
     --config-name=ppo_trainer \
     trainer.use_v1=True \
@@ -164,7 +163,6 @@ PY
     actor_rollout_ref.rollout.max_model_len="${MAX_MODEL_LEN}" \
     actor_rollout_ref.rollout.max_num_batched_tokens="${MAX_MODEL_LEN}" \
     actor_rollout_ref.rollout.temperature=1.0 \
-    actor_rollout_ref.rollout.disable_log_stats=False \
     actor_rollout_ref.rollout.top_p=0.7 \
     actor_rollout_ref.rollout.top_k=-1 \
     actor_rollout_ref.rollout.calculate_log_probs=True \
