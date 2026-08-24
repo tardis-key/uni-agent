@@ -22,11 +22,11 @@ from tensordict.tensorclass import NonTensorData, NonTensorStack
 
 from uni_agent.gateway.session import SessionHandle, Trajectory
 from uni_agent.logging import LogContext, sample_logging
+from uni_agent.rlinsight_adapter import agent_loop_session
 from verl.tools.tool_registry import initialize_tools_from_config
 from verl.utils import tensordict_utils as tu
 from verl.utils.import_utils import load_class_from_fqn
 from verl.utils.model import compute_position_id_with_mask
-from verl.utils.tracking import RLInsightLogger
 from verl.utils.transferqueue_utils import tq
 
 from .base import AgentFramework
@@ -665,7 +665,7 @@ class OpenAICompatibleAgentFramework(AgentFramework):
         """Run one gateway session lifecycle and return finalized trajectories."""
         session_id = f"session-sample-{sample_index}-rollout-{session_index}-{uuid4().hex}"
         uid = str(sample_fields.get("uid", ""))
-        session_trace = RLInsightLogger.agent_loop_session(
+        session_trace = agent_loop_session(
             sample=sample_index,
             session=session_index,
             uid=uid,

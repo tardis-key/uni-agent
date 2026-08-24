@@ -18,14 +18,20 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 from omegaconf import OmegaConf
-from rl_insight.agent_loop import agent_loop_lane_id
 from verl.utils.rollout_trace import RolloutTraceConfig
 from verl.utils.tracking import RLInsightLogger
 
+try:
+    from rl_insight.agent_loop import agent_loop_lane_id
+except ImportError:
+    agent_loop_lane_id = None
+
 logger = logging.getLogger(__name__)
+_warned_compatibility_features: set[str] = set()
 
 _trace_identity: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
     "uni_agent_trace_identity",
@@ -49,6 +55,13 @@ def _normalize_attributes(attributes: dict[str, Any] | None) -> dict[str, Any]:
     attribute handling.
     """
     return {str(key): _normalize_value(value) for key, value in (attributes or {}).items()}
+
+
+def _warn_once(feature: str, message: str) -> None:
+    if feature in _warned_compatibility_features:
+        return
+    _warned_compatibility_features.add(feature)
+    logger.warning("%s; monitoring is disabled for this feature", message)
 
 
 def _set_trace_identity(identity: dict[str, Any] | None) -> contextvars.Token[dict[str, Any] | None]:
@@ -84,15 +97,19 @@ def _report_span(
     only need to add span-specific attributes.
     """
     merged_attributes = {**(identity or _get_trace_identity()), **(attributes or {})}
+    trace_span = getattr(RLInsightLogger, "trace_span", None)
+    if trace_span is None:
+        _warn_once("verl.trace_span", "installed verl does not provide RLInsightLogger.trace_span")
+        return
     try:
-        RLInsightLogger.trace_span(
+        trace_span(
             name=name,
             start_time_ns=start_time_ns,
             end_time_ns=time.time_ns(),
             attributes=_normalize_attributes(merged_attributes),
         )
     except Exception:  # noqa: BLE001 - tracing must never break the rollout
-        logger.exception("failed to report rl-insight span %s", name)
+        logger.warning("failed to report rl-insight span %s", name)
 
 
 def init_rollout_trace_config(config: Any) -> None:
@@ -230,12 +247,18 @@ class GenerationSpan:
         identity = dict(self.identity)
         state_lane_id = identity.get("state_lane_id")
         if traj is not None:
-            state_lane_id = agent_loop_lane_id(
-                identity.get("experiment_name"),
-                identity.get("sample"),
-                identity.get("session"),
-                traj,
-            )
+            if agent_loop_lane_id is not None:
+                state_lane_id = agent_loop_lane_id(
+                    identity.get("experiment_name"),
+                    identity.get("sample"),
+                    identity.get("session"),
+                    traj,
+                )
+            else:
+                state_lane_id = (
+                    f"experiment={identity.get('experiment_name')}/sample={identity.get('sample')}/"
+                    f"session={identity.get('session')}/traj={traj}"
+                )
         _report_span(
             name="gateway_generation",
             start_time_ns=self.start_ns,
@@ -261,6 +284,47 @@ class GenerationSpan:
 def start_generation_span(identity: dict[str, Any]) -> GenerationSpan:
     """Start one gateway-generation span."""
     return GenerationSpan(identity=dict(identity), start_ns=_start_span())
+
+
+def agent_loop_session(
+    *,
+    experiment_name: Any | None = None,
+    sample: Any,
+    session: Any,
+    traj: Any = 0,
+    uid: Any = None,
+    global_steps: Any = None,
+    session_id: Any = None,
+):
+    """Create an Agent Loop session, falling back when installed verl is old."""
+    create_session = getattr(RLInsightLogger, "agent_loop_session", None)
+    if create_session is None:
+        _warn_once("verl.agent_loop_session", "installed verl does not provide RLInsightLogger.agent_loop_session")
+        rollout_config = RolloutTraceConfig.get_instance()
+        experiment_name = experiment_name or rollout_config.experiment_name or "default"
+        return SimpleNamespace(
+            identity={
+                "project": rollout_config.project_name or "default",
+                "experiment_name": experiment_name,
+                "sample": str(sample),
+                "session": str(session),
+                "traj": str(traj),
+                "state_lane_id": f"experiment={experiment_name}/sample={sample}/session={session}/traj={traj}",
+                "uid": uid or "",
+                "global_steps": global_steps if global_steps is not None else "",
+                "session_id": session_id or "",
+            },
+            finish=lambda **kwargs: None,
+        )
+    return create_session(
+        experiment_name=experiment_name,
+        sample=sample,
+        session=session,
+        traj=traj,
+        uid=uid,
+        global_steps=global_steps,
+        session_id=session_id,
+    )
 
 
 async def trace_sandbox_lifecycle(
