@@ -149,6 +149,10 @@ diff --git a/examples/mem_agent/train_mem_agent.sh b/examples/mem_agent/train_me
 -    --runtime-env-json="{\"env_vars\": {\"NCCL_DEBUG\": \"INFO\", \"NCCL_P2P_DISABLE\": \"1\", \"NCCL_IB_DISABLE\": \"1\", \"RAY_DEDUP_LOGS\": \"0\"}}" \
 +    --runtime-env-json="{\"env_vars\": {\"PYTHONPATH\": \"${REPO_ROOT}:${VERL_ROOT}\", \"VERL_RL_INSIGHT_ENABLE\": \"1\", \"RL_INSIGHT_SERVER_URL\": \"http://127.0.0.1:18080\", \"NCCL_DEBUG\": \"INFO\", \"NCCL_P2P_DISABLE\": \"1\", \"NCCL_IB_DISABLE\": \"1\", \"RAY_DEDUP_LOGS\": \"0\", \"RAY_OVERRIDE_JOB_RUNTIME_ENV\": \"1\"}}" \
      -- "${PYTHON_BIN}" -m verl.trainer.main_ppo \
+@@ -163,6 +164,7 @@
+     actor_rollout_ref.rollout.temperature=1.0 \
++    actor_rollout_ref.rollout.disable_log_stats=False \
+     actor_rollout_ref.rollout.top_p=0.7 \
 ```
 
 Run:
