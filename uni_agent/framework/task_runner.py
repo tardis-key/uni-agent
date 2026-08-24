@@ -7,8 +7,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from uni_agent.tasks import TaskConfigResolver, TaskResult, get_task
 from uni_agent.rlinsight_adapter import task_span
+from uni_agent.tasks import TaskConfigResolver, TaskResult, get_task
 from uni_agent.tasks.config import _deep_merge
 
 if TYPE_CHECKING:

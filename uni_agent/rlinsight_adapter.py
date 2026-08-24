@@ -22,6 +22,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from omegaconf import OmegaConf
+
 from verl.utils.rollout_trace import RolloutTraceConfig
 from verl.utils.tracking import RLInsightLogger
 
@@ -42,7 +43,7 @@ _trace_identity: contextvars.ContextVar[dict[str, Any] | None] = contextvars.Con
 def _normalize_value(value: Any) -> str | bool | int | float:
     if value is None:
         return ""
-    if isinstance(value, (str, bool, int, float)):
+    if isinstance(value, str | bool | int | float):
         return value
     return json.dumps(value, ensure_ascii=False, default=str)
 
@@ -325,50 +326,3 @@ def agent_loop_session(
         global_steps=global_steps,
         session_id=session_id,
     )
-
-
-async def trace_sandbox_lifecycle(
-    operation,
-    *,
-    sandbox: Any,
-    lifecycle: str,
-):
-    """Observe one sandbox lifecycle operation and report its span."""
-    provider = str(getattr(sandbox, "provider", "") or "")
-    image = str(getattr(sandbox, "image", "") or "")
-    runtime_id = _sandbox_runtime_id(sandbox)
-    start_ns = _start_span()
-    status, error = "success", None
-    try:
-        await operation
-    except Exception as exc:
-        status = "failure"
-        error = f"{type(exc).__name__}:{exc}"
-        raise
-    finally:
-        _report_span(
-            name="agent_sandbox",
-            start_time_ns=start_ns,
-            attributes={
-                "monitor.trace_source": "sandbox",
-                "provider": provider,
-                "image": image,
-                "runtime_id": runtime_id,
-                "lifecycle": lifecycle,
-                "status": status,
-                "error": error,
-            },
-        )
-
-
-def _sandbox_runtime_id(sandbox: Any) -> str:
-    for attr in ("_sandbox_id", "_container_name"):
-        value = getattr(sandbox, attr, None)
-        if value:
-            return str(value)
-    sandbox_obj = getattr(sandbox, "_sandbox", None)
-    for attr in ("sandbox_id", "object_id", "id"):
-        value = getattr(sandbox_obj, attr, None)
-        if value:
-            return str(value)
-    return ""

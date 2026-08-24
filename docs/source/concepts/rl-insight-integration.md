@@ -12,7 +12,6 @@ defines lane IDs, private dashboard metrics, or the span protocol.
 | Session start | `uni_agent/framework/framework.py` | Creates one agent-loop session and attaches its immutable identity to gateway metadata and task arguments. |
 | Task execution | `uni_agent/framework/task_runner.py` | One `agent_task` span with task name, sandbox image, prompt hash, reward, accuracy, completion, and reward-posting state. |
 | Model generation | `uni_agent/gateway/session/session.py` | One `gateway_generation` span per gateway call, including chain/trajectory, turn, token counts, finish reason, content, tools, and errors. |
-| Sandbox lifecycle | `uni_agent/sandbox/base.py` | One `agent_sandbox` span for start and stop, including provider, image, runtime ID, lifecycle, status, and error. |
 | Session finish | `uni_agent/framework/framework.py` | Publishes trajectory summaries and the `agent_session` span for success, empty, or failure outcomes. |
 
 ## Architecture
@@ -24,7 +23,6 @@ flowchart LR
     framework[Agent framework session] --> adapter
     task[Task runner] --> adapter
     gateway[Gateway generation] --> adapter
-    sandbox[Sandbox lifecycle] --> adapter
     adapter --> logger[verl RLInsightLogger]
     logger --> api[rl_insight API]
     api --> tempo[Tempo traces]
@@ -47,7 +45,6 @@ sequenceDiagram
     participant F as Agent framework
     participant G as GatewaySession
     participant T as Task runner
-    participant S as Sandbox
     participant L as RLInsightLogger
     participant R as RL-Insight
 
@@ -57,16 +54,13 @@ sequenceDiagram
     L->>R: create standard session identity
     F->>G: create session(metadata=identity)
     F->>T: run task(tools_kwargs=identity)
-    T->>S: start sandbox
-    S->>L: trace_sandbox_lifecycle(start)
     T->>L: task_span(result)
     G->>L: gateway_generation(turn, tokens, finish_reason)
-    S->>L: trace_sandbox_lifecycle(stop)
     F->>L: session.finish(trajectories, status)
     L->>R: emit session span and hierarchy gauges
 ```
 
-The exact number and order of task, generation, and sandbox spans follow the
+The exact number and order of task and generation spans follow the
 agent's business logic. The only hard requirements are one session object per
 agent session, consistent identity fields, and exactly one final `finish` call.
 
@@ -104,11 +98,6 @@ one-based chain ID and emits `gateway_generation`.
 
 Creates a `GenerationSpan` with the session identity and current timestamp.
 Gateway code must call `report()` in a `finally` block.
-
-### `trace_sandbox_lifecycle(operation, sandbox, lifecycle)`
-
-Awaitable wrapper for a sandbox start or stop coroutine. It reports
-`agent_sandbox` after the operation succeeds or raises.
 
 ## Verification
 

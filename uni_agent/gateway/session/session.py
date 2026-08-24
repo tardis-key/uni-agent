@@ -11,10 +11,10 @@ from enum import Enum
 from typing import Any
 
 from fastapi import HTTPException
-from uni_agent.rlinsight_adapter import start_generation_span
 
 from uni_agent.gateway.session.codec import MessageCodec
 from uni_agent.gateway.session.types import InternalGenerationRequest, SessionHandle, Trajectory
+from uni_agent.rlinsight_adapter import start_generation_span
 
 _EMPTY_PREFIX_HASH = hashlib.sha256(b"uni-agent-prefix-v1\0empty").hexdigest()
 

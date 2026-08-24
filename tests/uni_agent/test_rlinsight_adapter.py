@@ -51,7 +51,9 @@ def test_task_span_reports_identity_and_result(monkeypatch: pytest.MonkeyPatch) 
         "task": {"sandbox": {"image": "image:v1"}},
     }
 
-    with rlinsight_adapter.task_span(tools_kwargs, task_name="hotpotqa", prompt=[{"role": "user", "content": "q"}]) as span:
+    with rlinsight_adapter.task_span(
+        tools_kwargs, task_name="hotpotqa", prompt=[{"role": "user", "content": "q"}]
+    ) as span:
         span.record_result(
             SimpleNamespace(reward=0.5, accuracy=1.0, finished=True),
             reward_posted=True,
@@ -104,24 +106,6 @@ def test_generation_span_success_uses_chain_lane(monkeypatch: pytest.MonkeyPatch
     assert attributes["tools"] == '["search"]'
     assert attributes["turn"] == 3
     assert attributes["finish_reason"] == "stop"
-
-
-@pytest.mark.asyncio
-async def test_trace_sandbox_lifecycle_reports_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = _capture_trace_span(monkeypatch)
-    sandbox = SimpleNamespace(provider="local", image="image:v1", _container_name="box")
-
-    async def stop():
-        return None
-
-    await rlinsight_adapter.trace_sandbox_lifecycle(stop(), sandbox=sandbox, lifecycle="stop")
-
-    attributes = captured[0]["attributes"]
-    assert attributes["provider"] == "local"
-    assert attributes["image"] == "image:v1"
-    assert attributes["runtime_id"] == "box"
-    assert attributes["lifecycle"] == "stop"
-    assert attributes["status"] == "success"
 
 
 def test_old_verl_missing_optional_apis_degrades_to_warnings(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
